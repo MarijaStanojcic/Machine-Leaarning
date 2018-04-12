@@ -1,12 +1,9 @@
 ---
 title: "Classification using k-NN algorithm"
 author: "Marija Stanojcic"
-output:
-#  word_document: default
-  html_notebook: default
 ---
 
-# 1. Performe the cancer disgnosis kNN analysis. 
+# 1. Performe the cancer disgnosis using kNN analysis on the wbcd data. 
 
 # Step 1 - getting the data
 
