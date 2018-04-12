@@ -1,0 +1,401 @@
+---
+title: "Classification using k-NN algorithm"
+author: "Marija Stanojcic"
+output:
+#  word_document: default
+  html_notebook: default
+---
+
+# 1. Performe the cancer disgnosis kNN analysis. 
+
+# Step 1 - getting the data
+
+The Data that we are working on is slightly modified Wisconsin Breast Cancer Diagnostic data from the UCI Machine Learning Respiratory. 
+
+Description of the data from the website: 
+
+The data includes features that are computed from diagnosed images of a fine needle aspirate (FNA) of a breast mass. They describe characteristics of the cell nuclei present in the image.   
+
+The data has 569 examples of cancer biopsies and 32 features.
+
+Features:
+
+1 - ID number
+
+2 - Diagnosis (M = malignant, B = benign)
+
+Features from 3 to 32 are real - valued input features. 
+
+Ten real-valued features are computed for each cell nucleus:
+
+	a) radius (mean of distances from center to points on the perimeter)
+	b) texture (standard deviation of gray-scale values)
+	c) perimeter
+	d) area
+	e) smoothness (local variation in radius lengths)
+	f) compactness (perimeter^2 / area - 1.0)
+	g) concavity (severity of concave portions of the contour)
+	h) concave points (number of concave portions of the contour)
+	i) symmetry 
+	j) fractal dimension ("coastline approximation" - 1)
+
+Note: The data that we are working on is downloaded from the Packt website, and it is modified such that now we have header row and the rows of the data are already randomly ordered. 
+
+Goal: Use the k-NN algorithm to predict which breast mass is malignant or benign.
+
+```{r}
+wbcd <- read.csv("wisc_bc_data.csv", stringsAsFactors = FALSE)
+head(wbcd)
+```
+
+
+# Step 2 - exploring the data
+
+```{r}
+str(wbcd)
+```
+
+First we should remove ID feature as it unique identifier for each patient and doesn't provide useful information.
+
+```{r}
+wbcd <- wbcd[-1]
+head(wbcd)
+```
+
+
+And as diagnosis is character variable we can convert it to a factor to make two different groups.
+
+```{r}
+wbcd$diagnosis <- factor(wbcd$diagnosis, levels = c("B", "M"), labels = c("Benign", "Malignant"))
+class(wbcd$diagnosis)
+head(wbcd)
+```
+
+
+Let's see summary of the first few features. 
+
+```{r}
+summary(wbcd[1:4])
+```
+
+Making a proportion table of benign and malignant masses.
+
+```{r}
+round(prop.table(table(wbcd$diagnosis))*100, digit = 2)
+```
+
+- Transforming the data - normalizing numeric features.
+
+```{r}
+normalize <- function(x){
+  return ((x - min(x))/(max(x) - min(x))) 
+}
+
+library(base)
+wbcd_n <- as.data.frame(lapply(wbcd[2:31], normalize))
+head(wbcd_n)
+```
+
+
+Now we did normalized the data and all numeric features are in range [0,1].
+
+- Creating training and test set.
+
+As this data already has randomly ordered rows, we can just choose, for example 80% of the data for the training set. 
+
+```{r}
+train_wbcd_set <- wbcd_n[1:456, ] # 80% of 569 is 456
+test_wbcd_set <- wbcd_n[457:569, ]
+
+train_wbcd_label <- wbcd[1:456, 1]
+test_wbcd_label <- wbcd[457:569, 1]
+```
+
+# Step 3 - Training the model on the data
+
+Choosing appropriate k (number of nearest neighbors).
+
+```{r}
+train1 = train_wbcd_set
+head(train_wbcd_label)
+train1$diagnosis <- train_wbcd_label
+
+
+# install.packages("caret", dependencies = c("Depends", "Suggests"))
+library(caret)
+train_control <- trainControl(method = "repeatedcv", repeats = 30)
+knnFit <- train(diagnosis ~ ., data = train1, 
+                method = "knn", trControl = train_control, tuneLength = 10)
+knnFit
+
+plot(knnFit)
+
+# install.packages("sjPlot")
+library(sjPlot)
+sjc.elbow(train_wbcd_set)
+
+```
+
+From those two graph it seems like k = 11 is the best value for our k.
+
+```{r}
+# install.packages("class")
+library(class)
+
+test_wbcd_pred <- knn(train_wbcd_set, test_wbcd_set, cl = train_wbcd_label, k = 11)
+
+# this is the same as test_pred = knn
+# knnPredict <- predict(knnFit, newdata = test_set)
+# confusionMatrix(knnPredict, test_label)
+```
+
+
+
+# Step 4 - evaluating model performance
+
+```{r}
+library(gmodels)
+CrossTable(x = test_wbcd_label, y = test_wbcd_pred,
+           prop.chisq = FALSE)
+```
+
+We can also do this on a different way.
+
+```{r}
+library(caret)
+# Confusion Matrix
+(cm_wbcd_n <- confusionMatrix(test_wbcd_label, test_wbcd_pred))
+(accuracy = round(cm_wbcd_n$overall['Accuracy']*100, 2))
+
+```
+
+We achieved accuracy of 97.35%.
+
+# Step 5 - Improving model performance
+
+Changing how we scale the data - we can try z-standardization using scale() function. 
+
+```{r}
+wbcd_z <- as.data.frame(scale(wbcd[-1]))
+train_wbcd_z <- wbcd_z[1:456, ]
+test_wbcd_z <- wbcd_z[457:569, ]
+
+train_wbcd_z_label <- wbcd[1:456, 1]
+test_wbcd_z_label <- wbcd[457:569, 1]
+
+train2 <- train_wbcd_z
+train2$diagnosis <- train_wbcd_z_label
+head(train2)
+
+train_wbcd_z_control <- trainControl(method = "repeatedcv", repeats = 30)
+knnFit_wbcd_z <- train(diagnosis ~ ., data = train2, 
+                method = "knn", trControl = train_wbcd_z_control,
+                tuneLength = 10)
+knnFit_wbcd_z
+
+plot(knnFit_wbcd_z)
+
+# install.packages("sjPlot")
+# library(sjPlot)
+sjc.elbow(train_wbcd_z)
+
+
+```
+
+From the above plots it seems k = 9 is the best choice.
+
+```{r}
+test_wbcd_z_pred = knn(train_wbcd_z, test_wbcd_z, cl = train_wbcd_z_label, k = 9)
+
+(cm_wbcd_z <- confusionMatrix(test_wbcd_z_label, test_wbcd_z_pred))
+(accuracy = round(cm_wbcd_z$overall['Accuracy']*100, 2))
+
+```
+
+Accuracy for z standardization with k = 9 is 96.46%, which is less than accuracy for [0, 1] standardization.
+
+
+After analyzing Wisconston Breast Cancer Diagnosis data we found that in order to achieve the biggest accuracy we should use normalize [0, 1] features scaling and k = 11 as the number of nearest neighbors for future prediction of benign or malignant breast mass.
+
+
+
+
+# 2. Use k-NN algorithm to predict skin segments in Letter Recognition dataset.
+
+This data set is also from UCI Machine Learning Respiratory.
+
+You can find the data here: https://archive.ics.uci.edu/ml/datasets/Letter+Recognition
+
+Description from the website: 
+
+The objective is to identify each of a large number of black-and-white rectangular pixel displays as one of the 26 capital letters in the English alphabet. The character images were based on 20 different fonts and each letter within these 20 fonts was randomly distorted to produce a file of 20,000 unique stimuli. Each stimulus was converted into 16 primitive numerical attributes (statistical moments and edge counts) which were then scaled to fit into a range of integer values from 0 through 15. We typically train on the first 16000 items and then use the resulting model to predict the letter category for the remaining 4000. See the article cited above for more details.
+
+
+Attribute Information:
+
+1.	letter	capital letter	(26 values from A to Z) 
+2.	x-box	horizontal position of box	(integer) 
+3.	y-box	vertical position of box	(integer) 
+4.	width	width of box	(integer) 
+5.	high height of box	(integer) 
+6.	onpix	total # on pixels	(integer) 
+7.	x-bar	mean x of on pixels in box	(integer) 
+8.	y-bar	mean y of on pixels in box	(integer) 
+9.	x2bar	mean x variance	(integer) 
+10.	y2bar	mean y variance	(integer) 
+11.	xybar	mean x y correlation	(integer) 
+12.	x2ybr	mean of x * x * y	(integer) 
+13.	xy2br	mean of x * y * y	(integer) 
+14.	x-ege	mean edge count left to right	(integer) 
+15.	xegvy	correlation of x-ege with y	(integer) 
+16.	y-ege	mean edge count bottom to top	(integer) 
+17.	yegvx	correlation of y-ege with x	(integer)
+
+
+
+# Step 1 - getting the data
+
+```{r}
+letter <- read.table('letter-recognition.txt', header = FALSE, sep = ",")
+colnames(letter) <- c("letter", "x-box", "y-box", "width", "high",
+                      "onpix", "x-bar", "y-bar", "x2bar", "y2bar",
+                      "xybar", "x2ybar", "xy2bar", "x-ege", "xegvy",
+                      "y-ege", "yegvx")
+
+class(letter$letter)
+```
+
+We see that the variable letter is already a factor, so we don't need to change anything.
+
+# Step 2 - exploring the data
+
+Percentages of the different letters in the data.
+```{r}
+round(prop.table(table(letter$letter))*100, 2)
+```
+
+
+```{r}
+summary(letter)
+```
+We don't have NA values.
+
+Visualizing some features from the data.
+```{r}
+library(GGally)
+ggpairs(data = letter, columns = 2:7,
+        upper = list(continious = "cor"),
+        diag = list(continious = "densityDiag", fill = "yellow"))
+```
+
+Getting the training and test set. 
+
+```{r}
+set.seed(123)
+
+library(caTools)
+split <- sample.split(letter$letter, SplitRatio = 0.8)
+train_letter <- subset(letter, split == TRUE)
+test_letter <- subset(letter, split == FALSE)
+```
+
+
+Normalizing training and test set - using the normalize function from the first problem.
+```{r}
+library(base)
+train_letter_n <- as.data.frame(lapply(train_letter[2:17], normalize))
+train_letter_label <- train_letter[, 1]
+test_letter_n <- as.data.frame(lapply(test_letter[2:17], normalize))
+test_letter_label <- test_letter[, 1]
+```
+
+
+# Step 3 - Training the model
+
+Choosing the k.
+
+```{r}
+sjc.elbow(train_letter_n[, -1])
+```
+
+From the plot above it seems k = 12 is the best for the model.
+
+```{r}
+library(class)
+test_letter_n_pred <- knn(train = train_letter_n, test = test_letter_n,
+                      cl = train_letter_label, k = 12)
+
+```
+
+# Step 4 - Evaluating the model perfirmance
+
+```{r}
+(cm_letter_n = confusionMatrix(test_letter_n_pred, test_letter_label))
+```
+
+```{r}
+(accuracy_n = round(cm_letter_n$overall['Accuracy']*100, 2))
+```
+
+
+# Step 5 - Improving model performance
+
+We can try with different feature scaling.
+
+```{r}
+ctrl <- trainControl(method="repeatedcv", repeats = 5) #,classProbs=TRUE,summaryFunction = twoClassSummary)
+knnFit_letter <- train(letter ~ ., data = train_letter, method = "knn", trControl = ctrl, preProcess = c("center", "scale"), tuneLength = 20)
+# preProcessing is doing feature scaling, so we don't have to do it explicity
+knnFit_letter
+
+```
+
+
+```{r}
+knnPredict_letter <- predict(knnFit_letter, newdata = test_letter)
+
+#Get the confusion matrix to see accuracy value and other parameter values
+(cm_letter <- confusionMatrix(knnPredict_letter, test_letter$letter))
+
+```
+
+```{r}
+(accuracy = round(cm_letter$overall['Accuracy']*100, 2))
+```
+
+We got the accuracy of 94.78%, so this model is better.
+
+
+# Exploring some results 
+
+I am interested in seeing for what letters the model has made the most errors, and what the model predicted instead of that letter.
+
+```{r}
+m <- as.data.frame(cm_letter$table)
+m <- m[m$Prediction != m$Reference, ]
+summary(m$Freq)
+```
+
+The highest number of mistakes is 7. 
+I am interested to see what are the prediction pairs of letters (Reference Letter, Predicted Letter) with more than 3 mistakes.
+
+```{r}
+(m1 <- m[m$Freq > 3, ])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
