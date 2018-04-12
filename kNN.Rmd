@@ -373,11 +373,10 @@ m <- m[m$Prediction != m$Reference, ]
 summary(m$Freq)
 ```
 
-The highest number of mistakes is 7. 
-I am interested to see what are the prediction pairs of letters (Reference Letter, Predicted Letter) with more than 3 mistakes.
+I am interested to see what are the prediction pairs of letters (Reference Letter, Predicted Letter) with more than 4 mistakes.
 
 ```{r}
-(m1 <- m[m$Freq > 3, ])
+(m1 <- m[m$Freq > 4, ])
 ```
 
 
