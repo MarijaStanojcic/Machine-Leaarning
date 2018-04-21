@@ -1,0 +1,425 @@
+---
+title: "Naive Bayes"
+author: "Marija Stanojcic"
+date: "April 20, 2018"
+output: html_document
+---
+---
+title: "Naive Bayes Algorithm"
+author: "Marija Stanojcic"
+date: "April 20, 2018"
+output:
+  word_document: default
+  html_document: default
+---
+
+
+# 1.  Use Naive Bayes algorithm to perform the SMS spam filtering analysis.
+
+# Step 1 - getting the data
+
+This data is about SMS messages that have been conducted for SMS Spam Research. It includes label column
+(with ham (not spam) and spam labels) and column of text in English from SMS messages.
+
+The original dataset can be found here: https://archive.ics.uci.edu/ml/datasets/SMS+Spam+Collection.
+To read more about data go http://www.dt.fee.unicamp.br/~tiago/smsspamcollection/.
+
+```{r}
+URL <- "http://www.sci.csueastbay.edu/~esuess/classes/Statistics_6620/Presentations/ml6/sms_spam.csv"
+download.file(URL, destfile = "./sms_spam.csv", method="curl") # if "curl" doesn't work, try "libcurl"
+```
+
+
+
+# Step 2 - exploring and preparing the data
+
+```{r}
+sms_data <- read.csv("sms_spam.csv", stringsAsFactors = FALSE)
+head(sms_data)
+class(sms_data$type)
+```
+
+
+As "type" is character variable, and in the data it is representing two different categories,it should be converted into factor.
+
+```{r}
+sms_data$type <- factor(sms_data$type)
+head(sms_data$type)
+```
+
+Exploring "type" variable.
+
+```{r}
+table(sms_data$type)
+```
+
+Visualization of text in spam and ham messages.
+
+```{r}
+spam <- sms_data[which(sms_data$type == "spam"), ]
+ham <- sms_data[which(sms_data$type == "ham"), ]
+
+library(wordcloud)
+
+set.seed(28)
+par(mfrow = c(1,2))
+wordcloud(spam$text, max.words = 40, scale = c(3, 0.5))
+wordcloud(ham$text, max.words = 40, scale = c(3, 0.5))
+par(mfrow = c(1,1))
+```
+
+
+
+
+# Data preparation - Cleaning and standardizing text
+
+As this data has contains of text we need to clean and standardized the text to be able to perform a good analysis.
+
+First I'm going to replace all the punctuation with blank space. 
+This is easier to be done here than later in tm_map(x, removePunctuation) function, because removePunctuation only removes punctuation, 
+it doesn't change them to blank spaces. 
+
+For example, if we have text: "I'm taking Math,Stats,English"
+
+removePunctuation would give us: Im taking MathStatsEnglish 
+To avoid this I'm using gsub function to remove punctuation with blank space
+
+
+```{r}
+sms_data$text <-  gsub("[[:punct:]]+", " ", sms_data$text)
+```
+
+
+For dealing with the text data we are going to use "tm" package.
+
+```{r}
+# install.package("tm")
+library(tm)
+```
+
+The first thing we need to do is to make a corpus (collection of text documents).
+```{r}
+(sms_corpus <- VCorpus(VectorSource(sms_data$text))) 
+```
+
+Cleaning the corpus - changing all Uppercases to Lowercases, removing number and punctuation, and removing the stop words.
+
+
+```{r}
+sms_clean_corpus <- tm_map(sms_corpus, content_transformer(tolower)) # making all lowercases
+sms_clean_corpus <- tm_map(sms_clean_corpus, removeNumbers) # removing numbers
+sms_clean_corpus <- tm_map(sms_clean_corpus, removeWords, stopwords()) # there is a stopwords list in tm package, 
+# so we don't need to define our own
+```
+
+Previewing first 5 cleaned text messages.
+```{r}
+lapply(sms_clean_corpus[1:5], as.character)
+```
+
+Stemming the words -  leaving only the roots of the words
+```{r}
+library(SnowballC)
+sms_clean_corpus <- tm_map(sms_clean_corpus, stemDocument) # leaving only the roots of the words
+sms_clean_corpus <- tm_map(sms_clean_corpus, stripWhitespace) # eliminate unneeded whitespace
+```
+
+```{r}
+lapply(sms_clean_corpus[1:5], as.character)
+```
+
+The corpus contains of the row text messages. To be able to do analysis we need to divide messages into individual words. 
+This process is called tokenization (token - a single element of a text string).
+
+We are going to this by creating a Document Term Matrix from tm package. 
+
+```{r}
+sms_dtm <- DocumentTermMatrix(sms_corpus, 
+                              control = list(tolower = TRUE, removeNumbers = TRUE,
+                                             stopwords = function(x){removeWords(x, stopwords())}, 
+                                             stemming = TRUE))
+
+inspect(sms_dtm)
+```
+
+
+# Making Training and Test set
+
+```{r}
+set.seed(28)
+n = nrow(sms_dtm)
+index <- sample(n, round(n*0.8), replace = FALSE) # taking 80% of the data into training set
+index <- sort(index)
+```
+
+
+```{r}
+train_sms <- sms_dtm[index, ]
+test_sms <- sms_dtm[-index, ]
+```
+
+Making the labels for training and test set.
+```{r}
+train_sms_label <- sms_data[index, ]$type
+test_sms_label <- sms_data[-index, ]$type
+```
+
+A similar proportion of "spam" and "ham" in the training and test set.
+```{r}
+prop.table(table(train_sms_label))
+prop.table(table(test_sms_label))
+```
+
+
+```{r}
+list_freq_words <-  findFreqTerms(train_sms, 5) # the list of words that have occured more than 5 times
+head(list_freq_words)
+```
+
+Creating DTMs with only the frequent terms.
+```{r}
+train_sms_freq <- train_sms[, list_freq_words]
+test_sms_freq <- test_sms[, list_freq_words]
+```
+
+Converting counts to a factor. 
+```{r}
+convert_counts <- function(x) {
+  x <- ifelse(x > 0, "Yes", "No")
+}
+```
+
+# apply() convert_counts() to columns of train/test data
+
+```{r}
+train_sms_freq <- apply(train_sms_freq, MARGIN = 2, convert_counts)
+test_sms_freq <- apply(test_sms_freq, MARGIN = 2, convert_counts)
+```
+
+
+# Step 3 - training the model
+
+```{r}
+library(e1071)
+classifier_sms <- naiveBayes(train_sms_freq, train_sms_label)
+```
+
+# Step 4 - evalueting the model performance
+
+Predicting the Test set results.
+```{r}
+test_sms_pred = predict(classifier_sms, newdata = test_sms_freq)
+head(test_sms_pred)
+```
+
+
+Making the Confusion Matrix.
+```{r}
+library(caret)
+(cm = confusionMatrix(test_sms_label, test_sms_pred))
+```
+
+```{r}
+round((cm$overall['Accuracy'])*100, 2)
+```
+
+
+# Step 5 - improving model performance
+
+
+```{r}
+classifier_sms2 <- naiveBayes(train_sms_freq, train_sms_label, laplace = 1)
+test_sms_pred2 = predict(classifier_sms2, newdata = test_sms_freq)
+head(test_sms_pred2)
+(cm2 = confusionMatrix(test_sms_label, test_sms_pred2))
+```
+
+```{r}
+round((cm2$overall['Accuracy'])*100, 2)
+```
+Making laplace = 1 didn't improve our model.
+
+
+# 2. Use Naive Bayes classifier to predict votes in HouseVotes84 data.
+
+```{r}
+#install.packages("mlbench")
+library(mlbench)
+```
+
+
+Description of the data from the UCI Machine Learning Repository.
+
+Data Set Information:
+
+This data set includes votes for each of the U.S. House of Representatives Congressmen on the 16 key votes identified by the CQA. The CQA lists nine different types of votes: voted for, paired for, and announced for (these three simplified to yea), voted against, paired against, and announced against (these three simplified to nay), voted present, voted present to avoid conflict of interest, and did not vote or otherwise make a position known (these three simplified to an unknown disposition).
+
+
+Attribute Information:
+
+1. Class Name: 2 (democrat, republican) 
+2. handicapped-infants: 2 (y,n) 
+3. water-project-cost-sharing: 2 (y,n) 
+4. adoption-of-the-budget-resolution: 2 (y,n) 
+5. physician-fee-freeze: 2 (y,n) 
+6. el-salvador-aid: 2 (y,n) 
+7. religious-groups-in-schools: 2 (y,n) 
+8. anti-satellite-test-ban: 2 (y,n) 
+9. aid-to-nicaraguan-contras: 2 (y,n) 
+10. mx-missile: 2 (y,n) 
+11. immigration: 2 (y,n) 
+12. synfuels-corporation-cutback: 2 (y,n) 
+13. education-spending: 2 (y,n) 
+14. superfund-right-to-sue: 2 (y,n) 
+15. crime: 2 (y,n) 
+16. duty-free-exports: 2 (y,n) 
+17. export-administration-act-south-africa: 2 (y,n)
+
+# Step 1 - getting the data
+
+```{r}
+data("HouseVotes84")
+```
+
+# Step 2 - exploring and preparing the data
+
+```{r}
+summary(HouseVotes84)
+```
+
+Proportion of democrats and republicans in the data.
+```{r}
+round(prop.table(table(HouseVotes84$Class))*100, digit = 2)
+```
+
+Making Training and Test set
+
+```{r}
+set.seed(28)
+n_votes = nrow(HouseVotes84)
+index2 <- sample(n_votes, round(n_votes*0.75), replace = FALSE) # taking 75% of the data into training set
+
+train_votes <- HouseVotes84[index2, ]
+test_votes <- HouseVotes84[-index2, ]
+```
+
+# Step 3 - training the model
+
+```{r}
+classifier_votes <- naiveBayes(train_votes[, -1], train_votes[, 1])
+```
+
+# Step 4 - evalueting the model performance
+
+Predicting the Test set results.
+```{r}
+test_votes_pred = predict(classifier_votes, newdata = test_votes[, -1])
+head(test_votes_pred)
+```
+
+Making the Confusion Matrix.
+```{r}
+(cm_votes = confusionMatrix(test_votes[, 1], test_votes_pred))
+```
+
+```{r}
+round((cm_votes$overall['Accuracy'])*100, digits = 2)
+```
+
+Applying k - folds to validate accuracy.
+```{r}
+set.seed(28)
+folds = createFolds(train_votes$Class, k = 10)
+cv = lapply(folds, function(x) {
+  train_fold = train_votes[-x, ]
+  test_fold = train_votes[x, ]
+  classifier <- naiveBayes(train_votes[, -1], train_votes[, 1])
+  y_pred = predict(classifier, newdata = test_fold[-1])
+  cm = table(test_fold[, 1], y_pred)
+  accuracy = (cm[1,1] + cm[2,2]) / (cm[1,1] + cm[2,2] + cm[1,2] + cm[2,1])
+  return(accuracy)
+})
+accuracy = mean(as.numeric(cv))
+print("Accuracy: ")
+round(accuracy * 100, 2)
+```
+
+
+
+# Step 5 - improving the model performance
+
+```{r}
+classifier_votes2 <- naiveBayes(train_votes[, -1], train_votes[, 1], laplace = 1)
+test_votes_pred2 = predict(classifier_votes2, newdata = test_votes[, -1])
+head(test_votes_pred2)
+(cm_votes2 = confusionMatrix(test_votes[, 1], test_votes_pred2))
+```
+
+```{r}
+round(cm_votes2$overall['Accuracy']*100, 2)
+```
+
+The model accuracy stayed the same.
+
+
+Try training on 80% of the data.
+```{r}
+set.seed(28)
+index3 <- sample(n_votes, round(n_votes*0.8, 0), replace = FALSE)
+
+train_votes3 <- HouseVotes84[index3, ]
+test_votes3 <- HouseVotes84[-index3, ]
+```
+
+
+```{r}
+classifier_votes3 <- naiveBayes(train_votes3[, -1], train_votes3[, 1], laplace = 1)
+test_votes_pred3 = predict(classifier_votes3, newdata = test_votes3[, -1])
+head(test_votes_pred3)
+(cm_votes3 = confusionMatrix(test_votes3[, 1], test_votes_pred3))
+```
+Accuracy is 91.95%.
+
+
+Applying k - folds to validate accuracy.
+```{r}
+set.seed(28)
+folds = createFolds(train_votes3$Class, k = 10)
+cv = lapply(folds, function(x) {
+  train_fold = train_votes3[-x, ]
+  test_fold = train_votes3[x, ]
+  classifier <- naiveBayes(train_votes3[, -1], train_votes3[, 1], laplace = 1)
+  y_pred = predict(classifier, newdata = test_fold[-1])
+  cm = table(test_fold[, 1], y_pred)
+  accuracy = (cm[1,1] + cm[2,2]) / (cm[1,1] + cm[2,2] + cm[1,2] + cm[2,1])
+  return(accuracy)
+})
+accuracy = mean(as.numeric(cv))
+round(accuracy * 100, 2)
+```
+
+The model didn't improve. The best model was the first model, with training on 75% of the data and laplace = 0.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
