@@ -2,17 +2,9 @@
 title: "Naive Bayes"
 author: "Marija Stanojcic"
 date: "April 20, 2018"
-output: html_document
----
----
-title: "Naive Bayes Algorithm"
-author: "Marija Stanojcic"
-date: "April 20, 2018"
-output:
-  word_document: default
-  html_document: default
 ---
 
+You can also check this on http://rpubs.com/stana/naive_bayes.
 
 # 1.  Use Naive Bayes algorithm to perform the SMS spam filtering analysis.
 
